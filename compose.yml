@@ -1,0 +1,59 @@
+services:
+  # Database Service
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Passw0rd}
+      POSTGRES_DB: ${POSTGRES_DB:-vendy}
+    volumes:
+      - vendy_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-vendy}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5432:5432" # Allow host access for maintenance without exposing to world
+
+  # Next.js Application Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    restart: always
+    env_file:
+      - .env
+    environment:
+      # Still overriding/specifying some critical ones explicitely if needed, 
+      # but env_file handles most.
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: 3000
+    volumes:
+      - vendy_uploads:/app/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Caddy Reverse Proxy (HTTPS)
+  caddy:
+    image: caddy:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+      - vendy_uploads:/srv/uploads
+    depends_on:
+      - app
+
+volumes:
+  vendy_data:
+  vendy_uploads:
+  caddy_data:
+  caddy_config:
